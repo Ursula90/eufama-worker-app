@@ -1,0 +1,8 @@
+.venv/
+.client_venv/
+__pycache__/
+*.pyc
+.buildozer/
+bin/
+.kivy/
+media_cache/
