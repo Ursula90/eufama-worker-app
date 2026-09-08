@@ -16,6 +16,16 @@ version = 1.0
 p4a.bootstrap = sdl2
 requirements = python3,kivy==2.3.0,plyer,pyjnius,urllib3,websocket-client
 
+# Pin python-for-android itself (buildozer clones this from git — it is
+# NOT resolved from the `pip install python-for-android` in build.yml, so
+# pinning it there wouldn't do anything). Recent p4a releases hardcode the
+# `python3` recipe to build Python 3.14, whose C API removed a 5-argument
+# form of _PyLong_AsByteArray that Kivy 2.3.0's bundled/pre-cythonized
+# cgl_debug.c and vertex_instructions.c still call, breaking the build with
+# "too few arguments to function call". v2024.01.21 still targets Python
+# 3.11.5, which those generated files are compatible with.
+p4a.branch = v2024.01.21
+
 # NDK version pinned here — buildozer reads android.ndk from [app], NOT [android]
 android.ndk = 25b
 
