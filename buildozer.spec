@@ -5,12 +5,26 @@ package.name = eufamaworker
 package.domain = com.eufamaholding
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,wav
+
+# The FastAPI backend, and any local dev venvs, are not part of the
+# Android app — only the eufama_client/ package and main.py get packaged.
+source.exclude_dirs = backend,.venv,.client_venv,.github,.git
 
 version = 1.0
 
 p4a.bootstrap = sdl2
-requirements = python3,kivy==2.3.0,plyer,pyjnius,urllib3
+requirements = python3,kivy==2.3.0,plyer,pyjnius,urllib3,websocket-client
+
+# Pin python-for-android itself (buildozer clones this from git — it is
+# NOT resolved from the `pip install python-for-android` in build.yml, so
+# pinning it there wouldn't do anything). Recent p4a releases hardcode the
+# `python3` recipe to build Python 3.14, whose C API removed a 5-argument
+# form of _PyLong_AsByteArray that Kivy 2.3.0's bundled/pre-cythonized
+# cgl_debug.c and vertex_instructions.c still call, breaking the build with
+# "too few arguments to function call". v2024.01.21 still targets Python
+# 3.11.5, which those generated files are compatible with.
+p4a.branch = v2024.01.21
 
 # NDK version pinned here — buildozer reads android.ndk from [app], NOT [android]
 android.ndk = 25b
@@ -24,8 +38,8 @@ fullscreen = 0
 
 [android]
 
-# Permissions needed: GPS, Camera, Internet, Storage
-android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK,FOREGROUND_SERVICE
+# Permissions needed: GPS, Camera, Internet, Storage, Mic (voice notes/calls), Vibration (Buzz)
+android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,CAMERA,RECORD_AUDIO,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK,FOREGROUND_SERVICE,VIBRATE
 
 # Target modern Android (compatible with Samsung S26 Ultra)
 android.api = 34

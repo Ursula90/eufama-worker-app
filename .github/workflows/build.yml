@@ -49,6 +49,13 @@ jobs:
           yes | buildozer android debug
         env:
           ANDROID_ACCEPT_SDK_LICENSE: y
+          # The runner's default JAVA_HOME is Java 11 (the apt-installed
+          # openjdk-17-jdk above doesn't change it) but the Android Gradle
+          # Plugin pulled in by p4a's build.gradle requires Java 17 to
+          # evaluate at all ("Android Gradle plugin requires Java 17 to
+          # run. You are currently using Java 11."). ubuntu-22.04 runners
+          # ship Temurin 17 preinstalled at this path.
+          JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
