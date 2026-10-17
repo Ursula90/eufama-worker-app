@@ -27,6 +27,11 @@ class User(Base):
     is_online = Column(Boolean, default=False, nullable=False)
     last_seen = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Base64 X25519 public key (PyNaCl), uploaded by the client after it
+    # generates its keypair on first login. The matching private key never
+    # leaves the device. Null until the client has logged in at least once
+    # post-upgrade — older messages / accounts stay unencrypted until then.
+    public_key = Column(String(64), nullable=True)
 
 
 class Conversation(Base):
@@ -70,6 +75,16 @@ class Message(Base):
     duration_ms = Column(Integer, nullable=True)  # voice notes
     # groups together messages fanned out from one VIP broadcast action
     broadcast_group_id = Column(String(32), nullable=True, index=True)
+    # End-to-end encryption (text only — see README). When True, `body`
+    # is opaque ciphertext the server never decrypts.
+    # "direct": body is a base64 nacl.public.Box encrypted message.
+    # "group":  body is a base64 nacl.secret.SecretBox ciphertext of the
+    #           text, encrypted with a random per-message key; enc_keys
+    #           holds that key sealed (nacl.public.SealedBox) separately
+    #           for each recipient, so each can unwrap only their own copy.
+    encrypted = Column(Boolean, default=False, nullable=False)
+    enc_scheme = Column(String(16), nullable=True)
+    enc_keys = Column(Text, nullable=True)  # JSON: {user_id: sealed_key_b64}
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     sender = relationship("User")
