@@ -11,6 +11,7 @@ class UserOut(BaseModel):
     role: str
     is_online: bool
     last_seen: Optional[datetime] = None
+    public_key: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -19,6 +20,7 @@ class UserOut(BaseModel):
 class LoginRequest(BaseModel):
     worker_id: str
     token: str
+    public_key: Optional[str] = None  # uploaded/refreshed on every login
 
 
 class LoginResponse(BaseModel):
@@ -52,6 +54,9 @@ class MessageOut(BaseModel):
     media_mime: Optional[str] = None
     duration_ms: Optional[int] = None
     broadcast_group_id: Optional[str] = None
+    encrypted: bool = False
+    enc_scheme: Optional[str] = None
+    enc_keys: Optional[dict] = None
     created_at: datetime
 
     class Config:
@@ -69,8 +74,15 @@ class ConversationOut(BaseModel):
         from_attributes = True
 
 
+class BroadcastRecipientCipher(BaseModel):
+    user_id: int
+    body: str  # ciphertext encrypted to this one recipient's public key
+
+
 class BroadcastRequest(BaseModel):
-    body: str
+    body: Optional[str] = None  # plaintext — used when not encrypting
+    encrypted: bool = False
+    recipients: Optional[List[BroadcastRecipientCipher]] = None  # used when encrypted
 
 
 class BuzzRequest(BaseModel):

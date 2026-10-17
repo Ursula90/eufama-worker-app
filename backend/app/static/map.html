@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EUFAMA Connect — Hartă dispecerat</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHDRvePEW4E9ciSpbcgXiBxAYkXk=" crossorigin="">
+<style>
+  :root { --bg:#05070f; --panel:#0f1420; --cyan:#00b3ff; --dim:#7f8fae; --red:#d81b3d; --green:#00b36b; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:#e6ecf5; font-family:-apple-system,Roboto,"Segoe UI",sans-serif; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  #bar { padding:10px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #161c2b; font-size:13px; color:var(--dim); }
+  #bar .brand { color:var(--cyan); font-weight:700; letter-spacing:.5px; }
+  #map { flex:1; }
+  .leaflet-popup-content-wrapper { background:var(--panel); color:#e6ecf5; }
+  .leaflet-popup-tip { background:var(--panel); }
+  .pin { width:16px; height:16px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 6px rgba(0,0,0,.6); }
+  .pin.ok { background:var(--green); }
+  .pin.stale { background:var(--dim); }
+  .pin.sos { background:var(--red); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(216,27,61,.6);} 50%{ box-shadow:0 0 0 10px rgba(216,27,61,0);} }
+  #empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim); font-size:14px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bar">
+    <span class="brand">EUFAMA CONNECT — Dispecerat</span>
+    <span id="status-text">Se încarcă…</span>
+  </div>
+  <div style="position:relative; flex:1;">
+    <div id="map"></div>
+    <div id="empty" hidden>Niciun muncitor activ momentan.</div>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="map.js"></script>
+</body>
+</html>

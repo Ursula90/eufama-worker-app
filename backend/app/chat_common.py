@@ -4,6 +4,8 @@ Split out on its own module so the two routers can import from a common
 place without importing each other (would create a circular import).
 """
 
+import json
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -30,6 +32,7 @@ def require_member(db: Session, conversation_id: int, user_id: int) -> Conversat
 
 def message_out(msg: Message) -> MessageOut:
     media_url = f"{PUBLIC_BASE_URL}/media/{msg.media_path}" if msg.media_path else None
+    enc_keys = json.loads(msg.enc_keys) if msg.enc_keys else None
     return MessageOut(
         id=msg.id,
         conversation_id=msg.conversation_id,
@@ -40,5 +43,9 @@ def message_out(msg: Message) -> MessageOut:
         media_mime=msg.media_mime,
         duration_ms=msg.duration_ms,
         broadcast_group_id=msg.broadcast_group_id,
+        encrypted=msg.encrypted,
+        enc_scheme=msg.enc_scheme,
+        enc_keys=enc_keys,
         created_at=msg.created_at,
     )
+

@@ -29,13 +29,35 @@ async def broadcast(
 ):
     if user.role not in ("vip", "admin"):
         raise HTTPException(403, "only VIP or admin accounts can broadcast")
-    if not req.body.strip():
-        raise HTTPException(400, "message body required")
 
     group_id = uuid.uuid4().hex
-    recipients = db.query(User).filter(User.id != user.id).all()
-
     sent: list[MessageOut] = []
+
+    if req.encrypted:
+        if not req.recipients:
+            raise HTTPException(400, "encrypted broadcast requires per-recipient ciphertexts")
+        for entry in req.recipients:
+            recipient = db.query(User).get(entry.user_id)
+            if recipient is None or recipient.id == user.id:
+                continue
+            convo = get_or_create_direct(db, user.id, recipient.id)
+            msg = Message(
+                conversation_id=convo.id, sender_id=user.id, type="text",
+                body=entry.body, broadcast_group_id=group_id,
+                encrypted=True, enc_scheme="direct",
+            )
+            db.add(msg)
+            db.commit()
+            db.refresh(msg)
+            out = _message_out(msg)
+            sent.append(out)
+            await app_manager.send_to_user(recipient.id, {"type": "message", "message": out.model_dump(mode="json")})
+        return sent
+
+    if not req.body or not req.body.strip():
+        raise HTTPException(400, "message body required")
+
+    recipients = db.query(User).filter(User.id != user.id).all()
     for recipient in recipients:
         convo = get_or_create_direct(db, user.id, recipient.id)
         msg = Message(

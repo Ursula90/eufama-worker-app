@@ -1,3 +1,4 @@
+import json
 import threading
 
 from kivy.app import App
@@ -12,6 +13,7 @@ from kivy.uix.image import AsyncImage
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 
+from .. import contacts_cache, crypto
 from ..config import load_config
 from ..media_helpers import VoiceRecorder, open_url_external, take_photo
 from ..netclient import ApiError, get, post, post_multipart
@@ -125,10 +127,14 @@ class ChatDetailScreen(Screen):
         super().__init__(**kwargs)
         self._recorder = VoiceRecorder()
         self._last_message_id = 0
+        self.convo_type = None
+        self.convo_member_ids = []
 
     def on_pre_enter(self):
         self.ids.messages_box.clear_widgets()
         self._last_message_id = 0
+        self.convo_type = None
+        self.convo_member_ids = []
         ws_client.on("message", self._on_ws_message)
         threading.Thread(target=self._load_history, daemon=True).start()
 
@@ -138,10 +144,40 @@ class ChatDetailScreen(Screen):
     # ── history + live updates ──────────────────────────────
     def _load_history(self):
         try:
+            if not contacts_cache.all_contacts():
+                contacts_cache.refresh()
+            convo = get(f"/conversations/{self.conversation_id}", timeout=15)
+            self.convo_type = convo["type"]
+            self.convo_member_ids = convo["member_ids"]
             messages = get(f"/conversations/{self.conversation_id}/messages", timeout=15)
             Clock.schedule_once(lambda dt: self._render_all(messages))
         except Exception:
             pass
+
+    def _other_member_pubkey(self):
+        """Direct conversations only — the single other participant's key."""
+        my_id = load_config().get("user_id")
+        other_id = next((uid for uid in self.convo_member_ids if uid != my_id), None)
+        contact = contacts_cache.get_user(other_id) if other_id is not None else None
+        return contact.get("public_key") if contact else None
+
+    def _group_member_pubkeys(self):
+        """Group conversations — every member's key, including my own
+        (so I can decrypt my own sent history later), or None if anyone
+        in the group hasn't uploaded a key yet."""
+        my_id = load_config().get("user_id")
+        my_pubkey = crypto.my_public_key()
+        if not my_pubkey:
+            return None
+        keys = {my_id: my_pubkey}
+        for uid in self.convo_member_ids:
+            if uid == my_id:
+                continue
+            contact = contacts_cache.get_user(uid)
+            if not contact or not contact.get("public_key"):
+                return None
+            keys[uid] = contact["public_key"]
+        return keys
 
     def _render_all(self, messages):
         for msg in messages:
@@ -199,11 +235,27 @@ class ChatDetailScreen(Screen):
             row.add_widget(spacer)
         return row
 
+    def _decrypt_text(self, msg) -> str:
+        if not msg.get("encrypted"):
+            return msg.get("body") or ""
+
+        if msg.get("enc_scheme") == "direct":
+            other_pubkey = self._other_member_pubkey()
+            text = crypto.decrypt_direct(msg["body"], other_pubkey) if other_pubkey else None
+        elif msg.get("enc_scheme") == "group":
+            my_id = str(load_config().get("user_id"))
+            sealed = (msg.get("enc_keys") or {}).get(my_id)
+            text = crypto.decrypt_group(msg["body"], sealed) if sealed else None
+        else:
+            text = None
+
+        return text if text is not None else "🔒 Nu pot decripta acest mesaj"
+
     def _build_content(self, msg):
         mtype = msg["type"]
         if mtype == "text":
             lbl = Label(
-                text=msg.get("body") or "", color=(0.92, 0.95, 0.98, 1),
+                text=self._decrypt_text(msg), color=(0.92, 0.95, 0.98, 1),
                 size_hint_y=None, halign="left", valign="top",
             )
             lbl.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
@@ -233,7 +285,37 @@ class ChatDetailScreen(Screen):
         if not text:
             return
         self.ids.message_input.text = ""
-        threading.Thread(target=self._send_thread, args=({"type": "text", "body": text}, None), daemon=True).start()
+        threading.Thread(target=self._send_text_thread, args=(text,), daemon=True).start()
+
+    def _send_text_thread(self, text):
+        fields = {"type": "text"}
+
+        if self.convo_type == "direct":
+            other_pubkey = self._other_member_pubkey()
+            if other_pubkey:
+                fields["body"] = crypto.encrypt_direct(text, other_pubkey)
+                fields["encrypted"] = "true"
+                fields["enc_scheme"] = "direct"
+            else:
+                fields["body"] = text
+        elif self.convo_type == "group":
+            pubkeys = self._group_member_pubkeys()
+            if pubkeys:
+                body_b64, sealed_keys = crypto.encrypt_group(text, pubkeys)
+                fields["body"] = body_b64
+                fields["encrypted"] = "true"
+                fields["enc_scheme"] = "group"
+                fields["enc_keys"] = json.dumps(sealed_keys)
+            else:
+                fields["body"] = text
+        else:
+            fields["body"] = text
+
+        try:
+            msg = post_multipart(f"/conversations/{self.conversation_id}/messages", fields)
+            Clock.schedule_once(lambda dt: self._append_message(msg))
+        except ApiError:
+            pass
 
     def attach_photo(self):
         take_photo(self._on_photo_ready)

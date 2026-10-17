@@ -14,7 +14,7 @@ source.exclude_dirs = backend,.venv,.client_venv,.github,.git
 version = 1.0
 
 p4a.bootstrap = sdl2
-requirements = python3,kivy==2.3.0,plyer,pyjnius,urllib3,websocket-client
+requirements = python3,kivy==2.3.0,plyer,pyjnius,urllib3,websocket-client,pynacl
 
 # Pin python-for-android itself (buildozer clones this from git — it is
 # NOT resolved from the `pip install python-for-android` in build.yml, so
@@ -38,8 +38,10 @@ fullscreen = 0
 
 [android]
 
-# Permissions needed: GPS, Camera, Internet, Storage, Mic (voice notes/calls), Vibration (Buzz)
-android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,CAMERA,RECORD_AUDIO,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK,FOREGROUND_SERVICE,VIBRATE
+# Permissions needed: GPS, Camera, Internet, Storage, Mic (voice notes/calls),
+# Vibration (Buzz), POST_NOTIFICATIONS (Android 13+ requires it explicitly
+# for any notification, including the local ones posted while backgrounded)
+android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,CAMERA,RECORD_AUDIO,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK,FOREGROUND_SERVICE,VIBRATE,POST_NOTIFICATIONS
 
 # Target modern Android (compatible with Samsung S26 Ultra)
 android.api = 34
