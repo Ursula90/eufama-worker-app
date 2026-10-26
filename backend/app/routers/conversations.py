@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -89,7 +91,10 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
     ids = [r[0] for r in my_convo_ids]
     convos = db.query(Conversation).filter(Conversation.id.in_(ids)).all() if ids else []
     out = [_to_out(db, c) for c in convos]
-    out.sort(key=lambda c: c.last_message.created_at if c.last_message else "", reverse=True)
+    # datetime.min, not "", so an empty conversation (no messages yet,
+    # e.g. a just-created group) sorts as oldest rather than crashing the
+    # comparison between a datetime and a string.
+    out.sort(key=lambda c: c.last_message.created_at if c.last_message else datetime.min, reverse=True)
     return out
 
 

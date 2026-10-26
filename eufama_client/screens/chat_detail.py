@@ -135,6 +135,11 @@ class ChatDetailScreen(Screen):
         self._last_message_id = 0
         self.convo_type = None
         self.convo_member_ids = []
+        # Disabled until _load_history knows convo_type/member_ids — without
+        # this, typing+sending fast enough to beat that network round trip
+        # would silently fall through to the plaintext branch below instead
+        # of encrypting, since convo_type is still None at that point.
+        self.ids.message_input.disabled = True
         ws_client.on("message", self._on_ws_message)
         threading.Thread(target=self._load_history, daemon=True).start()
 
@@ -153,6 +158,8 @@ class ChatDetailScreen(Screen):
             Clock.schedule_once(lambda dt: self._render_all(messages))
         except Exception:
             pass
+        finally:
+            Clock.schedule_once(lambda dt: setattr(self.ids.message_input, "disabled", False))
 
     def _other_member_pubkey(self):
         """Direct conversations only — the single other participant's key."""
@@ -235,27 +242,11 @@ class ChatDetailScreen(Screen):
             row.add_widget(spacer)
         return row
 
-    def _decrypt_text(self, msg) -> str:
-        if not msg.get("encrypted"):
-            return msg.get("body") or ""
-
-        if msg.get("enc_scheme") == "direct":
-            other_pubkey = self._other_member_pubkey()
-            text = crypto.decrypt_direct(msg["body"], other_pubkey) if other_pubkey else None
-        elif msg.get("enc_scheme") == "group":
-            my_id = str(load_config().get("user_id"))
-            sealed = (msg.get("enc_keys") or {}).get(my_id)
-            text = crypto.decrypt_group(msg["body"], sealed) if sealed else None
-        else:
-            text = None
-
-        return text if text is not None else "🔒 Nu pot decripta acest mesaj"
-
     def _build_content(self, msg):
         mtype = msg["type"]
         if mtype == "text":
             lbl = Label(
-                text=self._decrypt_text(msg), color=(0.92, 0.95, 0.98, 1),
+                text=crypto.decrypt_message_body(msg, self.convo_member_ids), color=(0.92, 0.95, 0.98, 1),
                 size_hint_y=None, halign="left", valign="top",
             )
             lbl.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
