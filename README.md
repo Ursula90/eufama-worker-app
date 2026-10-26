@@ -12,8 +12,15 @@ Getting a working beta in front of someone in one sitting:
 
 1. **Start the backend** on your laptop (Option A below) — note the LAN IP
    you used for `PUBLIC_BASE_URL`.
-2. **Provision 2-3 demo accounts** (one `vip`, the rest `worker`) — see
-   "Provisioning a worker" below. Save each `worker_id` + `token`.
+2. **Provision demo accounts** — the fastest way is the included script:
+   ```bash
+   cd backend
+   ADMIN_API_KEY=<same value you ran docker compose with> BASE_URL=http://<your-LAN-IP>:8765 ./provision_demo.sh
+   ```
+   It creates one VIP account ("Valy") and two workers ("Ion Popescu",
+   "Maria Ionescu") and prints each one's `worker_id` + `token`. Save
+   them — tokens are shown once. (To provision a single custom account
+   instead, see "Provisioning a worker" below.)
 3. **Get the APK**: GitHub → this repo → **Actions** tab → the latest
    green **"Build EUFAMA Worker APK"** run → **Artifacts** section at the
    bottom → download `eufama-worker-apk`, unzip, install the `.apk` on an
