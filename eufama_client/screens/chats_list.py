@@ -9,7 +9,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 
-from .. import contacts_cache
+from .. import contacts_cache, crypto
 from ..config import load_config
 from ..netclient import get
 
@@ -90,7 +90,7 @@ class ChatsListScreen(Screen):
         if last is None:
             preview = "Fără mesaje încă"
         elif last["type"] == "text":
-            preview = last["body"] or ""
+            preview = crypto.decrypt_message_body(last, convo["member_ids"])
         else:
             preview = _MEDIA_PREVIEW.get(last["type"], last["type"])
 

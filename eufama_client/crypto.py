@@ -103,3 +103,32 @@ def decrypt_group(body_b64: str, my_sealed_key_b64: str) -> str | None:
         return SecretBox(key).decrypt(_b64d(body_b64)).decode("utf-8")
     except Exception:
         return None
+
+
+PLACEHOLDER_ENCRYPTED = "🔒 Mesaj criptat"
+
+
+def decrypt_message_body(msg: dict, member_ids: list) -> str:
+    """Shared by every screen that renders a text message body (chat
+    bubbles, the Chats tab's last-message preview, ...) so an encrypted
+    message is never shown as raw ciphertext in one place just because
+    the decrypt logic there didn't get updated alongside the others."""
+    if not msg.get("encrypted"):
+        return msg.get("body") or ""
+
+    from . import contacts_cache
+    my_id = load_config().get("user_id")
+
+    text = None
+    if msg.get("enc_scheme") == "direct":
+        other_id = next((uid for uid in member_ids if uid != my_id), None)
+        contact = contacts_cache.get_user(other_id) if other_id is not None else None
+        other_pubkey = contact.get("public_key") if contact else None
+        if other_pubkey:
+            text = decrypt_direct(msg["body"], other_pubkey)
+    elif msg.get("enc_scheme") == "group":
+        sealed = (msg.get("enc_keys") or {}).get(str(my_id))
+        if sealed:
+            text = decrypt_group(msg["body"], sealed)
+
+    return text if text is not None else PLACEHOLDER_ENCRYPTED

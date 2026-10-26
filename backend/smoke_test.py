@@ -82,6 +82,15 @@ check("send image message", r.status_code == 200 and r.json()["media_url"] is no
 r = client.post("/conversations", json={"type": "group", "member_ids": [w2_id, boss_id], "name": "Santier A"}, headers=H1)
 check("create group", r.status_code == 200 and len(r.json()["member_ids"]) == 3)
 group_id = r.json()["id"]
+
+# Regression: listing conversations while one has messages (convo_id,
+# above) and this brand-new group has none used to crash with
+# "'<' not supported between instances of 'datetime.datetime' and 'str'"
+# (sorting mixed a real timestamp against a "" fallback for empty convos).
+r = client.get("/conversations", headers=H1)
+check("list conversations doesn't crash with a mix of empty/non-empty convos", r.status_code == 200)
+check("empty group has no last_message", any(c["id"] == group_id and c["last_message"] is None for c in r.json()))
+
 r = client.post(f"/conversations/{group_id}/messages", data={"type": "text", "body": "Grup activ"}, headers=H2)
 check("post to group", r.status_code == 200)
 
