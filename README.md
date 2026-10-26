@@ -6,6 +6,33 @@ the old Yahoo! Messenger buzz), and a VIP broadcast-to-everyone feature —
 plus the original EUFAMA Worker safety features (shift/GPS tracking, panic
 button, photo incident reports).
 
+## Quick demo setup
+
+Getting a working beta in front of someone in one sitting:
+
+1. **Start the backend** on your laptop (Option A below) — note the LAN IP
+   you used for `PUBLIC_BASE_URL`.
+2. **Provision 2-3 demo accounts** (one `vip`, the rest `worker`) — see
+   "Provisioning a worker" below. Save each `worker_id` + `token`.
+3. **Get the APK**: GitHub → this repo → **Actions** tab → the latest
+   green **"Build EUFAMA Worker APK"** run → **Artifacts** section at the
+   bottom → download `eufama-worker-apk`, unzip, install the `.apk` on an
+   Android phone (enable "install unknown apps" for whichever app you
+   transfer it through).
+4. **On the phone**: open the app, tap the "EUFAMA" logo 5× fast on the
+   login screen → the hidden admin screen appears → enter your laptop's
+   LAN IP and port `8765` → Save. Back on the login screen, enter one
+   demo account's `worker_id` + `token` → Login.
+5. Repeat step 4 on a second phone (or the same phone logged out/back in
+   with a different account) so there's someone to chat with.
+
+A natural order to show someone: log in on two phones → send a text (note
+it's end-to-end encrypted, not just "in transit") → send a photo → send a
+voice note → hit "zzZ" (Buzz) and watch the other phone shake/vibrate →
+start a video call (opens the system browser on both ends) → from the VIP
+account, send a broadcast and open the live map → switch to the Safety tab
+and show Start Shift / Panic.
+
 ## Architecture
 
 ```
@@ -44,6 +71,21 @@ bandwidth/CPU cost grows with the square of the participant count — see
 **Roadmap** below for the cap and the upgrade path.
 
 ## Running the backend
+
+### Option A — Docker (fastest for a demo)
+
+```bash
+cd backend
+PUBLIC_BASE_URL="http://<your-machine's-LAN-IP>:8765" docker compose up -d --build
+```
+
+`<your-machine's-LAN-IP>` must be an address phones on the same network can
+actually reach (e.g. `192.168.1.42`) — not `localhost`, since the APK runs
+on a different device than the backend. Find yours with `ipconfig getifaddr en0`
+(macOS) or `hostname -I` (Linux). Data persists in a Docker volume across
+restarts. Stop with `docker compose down` (add `-v` to also wipe the data).
+
+### Option B — plain Python venv
 
 ```bash
 cd backend
