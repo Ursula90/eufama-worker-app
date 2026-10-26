@@ -12,11 +12,13 @@ unmodified.
 
 from datetime import datetime
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import verify_token
-from ..database import SessionLocal
+from ..admin_tokens import issue_admin_token, resolve_admin_token
+from ..auth import get_current_user, verify_token
+from ..config import PUBLIC_BASE_URL
+from ..database import SessionLocal, get_db
 from ..models import User
 from ..ws_manager import app_manager
 
@@ -42,6 +44,7 @@ def shift_start(payload: dict = Body(...)):
         user = _authenticate(db, payload.get("worker_id", ""), payload.get("token", ""))
         shift_state[user.worker_id] = {
             "on_shift": True,
+            "display_name": user.display_name,
             "lat": payload.get("lat"), "lon": payload.get("lon"),
             "started_at": datetime.utcnow().isoformat(),
         }
@@ -66,7 +69,7 @@ def ping(payload: dict = Body(...)):
     db = SessionLocal()
     try:
         user = _authenticate(db, payload.get("worker_id", ""), payload.get("token", ""))
-        state = shift_state.setdefault(user.worker_id, {"on_shift": True})
+        state = shift_state.setdefault(user.worker_id, {"on_shift": True, "display_name": user.display_name})
         state.update({
             "lat": payload.get("lat"), "lon": payload.get("lon"),
             "battery": payload.get("battery"), "status": payload.get("status", "OK"),
@@ -84,7 +87,7 @@ async def sos(payload: dict = Body(...)):
     db = SessionLocal()
     try:
         user = _authenticate(db, payload.get("worker_id", ""), payload.get("token", ""))
-        state = shift_state.setdefault(user.worker_id, {})
+        state = shift_state.setdefault(user.worker_id, {"display_name": user.display_name})
         state.update({
             "sos": True, "lat": payload.get("lat"), "lon": payload.get("lon"),
             "sos_at": datetime.utcnow().isoformat(),
@@ -137,7 +140,24 @@ async def incident(payload: dict = Body(...)):
         db.close()
 
 
+@router.post("/admin/map-token")
+def issue_map_token(user: User = Depends(get_current_user)):
+    """VIP/admin only — mints a short-lived token for the live map page,
+    so it never needs the caller's real login token embedded in a URL."""
+    if user.role not in ("vip", "admin"):
+        raise HTTPException(403, "only VIP or admin accounts can view the map")
+    token = issue_admin_token(user.id)
+    return {"token": token, "map_url": f"{PUBLIC_BASE_URL}/static/map.html?token={token}"}
+
+
 @router.get("/dispatch/shifts")
-def dispatch_shifts():
-    """Simple read model a dispatcher dashboard can poll."""
+def dispatch_shifts(token: str, db: Session = Depends(get_db)):
+    """Live read model the map page polls. Token-gated (see /admin/map-token)
+    rather than open, since it leaks every worker's live GPS position."""
+    user_id = resolve_admin_token(token)
+    if user_id is None:
+        raise HTTPException(401, "invalid or expired map token")
+    user = db.query(User).get(user_id)
+    if user is None or user.role not in ("vip", "admin"):
+        raise HTTPException(403, "only VIP or admin accounts can view the map")
     return shift_state

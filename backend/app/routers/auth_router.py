@@ -18,6 +18,8 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(401, "Invalid worker ID or token")
 
     user.last_seen = datetime.utcnow()
+    if req.public_key:
+        user.public_key = req.public_key
     db.commit()
     db.refresh(user)
     return LoginResponse(user=UserOut.model_validate(user))

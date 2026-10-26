@@ -4,6 +4,8 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.uix.screenmanager import Screen
 
+from .. import contacts_cache, crypto
+from ..media_helpers import open_url_external
 from ..netclient import ApiError, post
 
 KV = """
@@ -54,6 +56,17 @@ KV = """
             color: 0, 0.8, 0.4, 1
             size_hint_y: None
             height: dp(24)
+
+        Widget:
+            size_hint_y: None
+            height: dp(10)
+
+        RoundButton:
+            text: '📍 Hartă live — toți muncitorii'
+            bg_color: 0.1, 0.13, 0.2, 1
+            size_hint_y: None
+            height: dp(44)
+            on_release: root.open_map()
 """
 Builder.load_string(KV)
 
@@ -71,7 +84,21 @@ class BroadcastScreen(Screen):
 
     def _send_thread(self, text):
         try:
-            recipients = post("/broadcast", {"body": text})
+            if not contacts_cache.all_contacts():
+                contacts_cache.refresh()
+            contacts = contacts_cache.all_contacts()
+            if contacts and all(c.get("public_key") for c in contacts):
+                payload = {
+                    "encrypted": True,
+                    "recipients": [
+                        {"user_id": c["id"], "body": crypto.encrypt_direct(text, c["public_key"])}
+                        for c in contacts
+                    ],
+                }
+            else:
+                payload = {"body": text}
+
+            recipients = post("/broadcast", payload)
             Clock.schedule_once(lambda dt: self._ok(len(recipients)))
         except ApiError as e:
             Clock.schedule_once(lambda dt: self._fail(e.message))
@@ -86,3 +113,13 @@ class BroadcastScreen(Screen):
         self.ids.send_btn.disabled = False
         self.ids.status_label.color = (1, 0.3, 0.3, 1)
         self.ids.status_label.text = f"// Eroare: {message}"
+
+    def open_map(self):
+        threading.Thread(target=self._open_map_thread, daemon=True).start()
+
+    def _open_map_thread(self):
+        try:
+            resp = post("/admin/map-token", {})
+            Clock.schedule_once(lambda dt: open_url_external(resp["map_url"]))
+        except ApiError as e:
+            Clock.schedule_once(lambda dt: self._fail(e.message))

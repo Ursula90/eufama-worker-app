@@ -6,6 +6,7 @@ from kivy.lang import Builder
 from kivy.uix.screenmanager import Screen
 
 from ..config import load_config, update_config
+from ..crypto import ensure_keypair
 from ..netclient import ApiError, post
 from ..ws_client import ws_client
 
@@ -142,7 +143,8 @@ class LoginScreen(Screen):
 
     def _login_thread(self, wid, token):
         try:
-            resp = post("/auth/login", {"worker_id": wid, "token": token}, auth=False)
+            pubkey = ensure_keypair()
+            resp = post("/auth/login", {"worker_id": wid, "token": token, "public_key": pubkey}, auth=False)
             user = resp["user"]
             update_config(
                 worker_id=wid, token=token,

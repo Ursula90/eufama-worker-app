@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 
@@ -41,6 +42,9 @@ async def send_message(
     type: str = Form("text"),
     body: str | None = Form(None),
     duration_ms: int | None = Form(None),
+    encrypted: bool = Form(False),
+    enc_scheme: str | None = Form(None),
+    enc_keys: str | None = Form(None),  # JSON string: {user_id: sealed_key_b64}
     file: UploadFile | None = File(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -52,6 +56,19 @@ async def send_message(
         raise HTTPException(400, f"{type} messages require a file upload")
     if type == "text" and not (body and body.strip()):
         raise HTTPException(400, "text messages require a non-empty body")
+
+    enc_keys_json = None
+    if encrypted:
+        if enc_scheme not in ("direct", "group"):
+            raise HTTPException(400, "enc_scheme must be 'direct' or 'group' when encrypted")
+        if enc_scheme == "group":
+            if not enc_keys:
+                raise HTTPException(400, "group-encrypted messages require enc_keys")
+            try:
+                json.loads(enc_keys)
+            except ValueError:
+                raise HTTPException(400, "enc_keys must be valid JSON")
+            enc_keys_json = enc_keys
 
     media_path = media_mime = None
     media_size = None
@@ -67,6 +84,9 @@ async def send_message(
         media_mime=media_mime,
         media_size=media_size,
         duration_ms=duration_ms,
+        encrypted=encrypted,
+        enc_scheme=enc_scheme if encrypted else None,
+        enc_keys=enc_keys_json,
     )
     db.add(msg)
     db.commit()

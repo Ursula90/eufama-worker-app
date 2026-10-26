@@ -1,10 +1,12 @@
 # EUFAMA Connect
 
-A WhatsApp-style messaging app for EUFAMA Holding: 1:1 and group chat,
-photos/files, voice notes, audio/video calls, a "Buzz" nudge (same idea as
-the old Yahoo! Messenger buzz), and a VIP broadcast-to-everyone feature —
-plus the original EUFAMA Worker safety features (shift/GPS tracking, panic
-button, photo incident reports).
+A WhatsApp-style messaging app for EUFAMA Holding: 1:1 and group chat
+(end-to-end encrypted text), photos/files, voice notes, audio/video calls, a
+"Buzz" nudge (same idea as the old Yahoo! Messenger buzz), a VIP
+broadcast-to-everyone feature, local notifications for messages/buzzes/calls
+arriving while the app is backgrounded, and a live admin map of every
+worker's GPS position — plus the original EUFAMA Worker safety features
+(shift/GPS tracking, panic button, photo incident reports).
 
 ## Quick demo setup
 
@@ -49,15 +51,18 @@ eufama-worker-app/
 │   ├── screens/           # login, admin, home (tabs), chat, contacts, groups, broadcast, safety
 │   ├── netclient.py       # REST client (stdlib urllib, hand-rolled multipart upload)
 │   ├── ws_client.py       # background WebSocket client (chat push, presence, buzz, calls)
+│   ├── crypto.py          # PyNaCl E2E encryption (direct Box + group SecretBox/SealedBox)
+│   ├── notifications.py   # local notifications for messages/buzz/calls while backgrounded
 │   ├── effects.py         # Buzz: vibration + screen shake + sound
-│   └── media_helpers.py   # camera, voice recording, opening the call page in the browser
+│   └── media_helpers.py   # camera, voice recording, opening the call/map pages in the browser
 ├── buildozer.spec         # Android APK build config
 ├── .github/workflows/     # CI: builds the APK on every push (buildozer android debug)
 └── backend/                # FastAPI server — chat, calls signaling, safety endpoints
     ├── app/
     │   ├── models.py, schemas.py, database.py
+    │   ├── call_tokens.py, admin_tokens.py  # short-lived tokens for the call/map browser pages
     │   ├── routers/        # auth, admin, users, conversations, messages, broadcast, buzz, calls, safety, ws
-    │   └── static/         # call.html + call.js — the WebRTC calling client
+    │   └── static/         # call.html/js (WebRTC) + map.html/js (live admin map)
     └── requirements.txt
 ```
 
@@ -76,6 +81,53 @@ Group calls use a full mesh (every participant connects directly to
 every other one). That's simple and works well for small groups but its
 bandwidth/CPU cost grows with the square of the participant count — see
 **Roadmap** below for the cap and the upgrade path.
+
+### End-to-end encryption (text messages)
+
+Each device generates its own X25519 keypair on first login (`eufama_client/crypto.py`)
+and uploads only the *public* key; the private key never leaves the phone.
+The server stores/relays ciphertext for encrypted messages and never sees
+the plaintext:
+
+- **Direct chats** use `nacl.public.Box` between the two participants.
+- **Group chats and VIP broadcasts** use a random per-message key
+  (`nacl.secret.SecretBox`) to encrypt the text once, then that key is
+  individually sealed (`nacl.public.SealedBox`) to every member's public
+  key — including the sender's own, so they can still read their sent
+  history after re-fetching it.
+
+If any participant hasn't logged in since this feature shipped (no public
+key on file yet), the client falls back to sending that one message in
+plaintext rather than failing to send — the UI doesn't currently flag this
+fallback to the user, which is a documented gap, not a silent trap: the
+message still only goes to the same people it always would.
+
+**Trust model — read this before calling it "WhatsApp-grade":** this is
+trust-on-first-use, with no safety-number/key-verification UI yet. It stops
+a passive server operator or network eavesdropper from reading message
+content, which is the main thing asked for, but not an active attacker who
+controls the server at the exact moment two people first exchange keys.
+Photos, files and voice notes are **not** encrypted in this pass — see
+Roadmap.
+
+### Local notifications
+
+While the app is backgrounded (another app in front, screen off but the
+process still alive), incoming messages, buzzes, calls and SOS alerts post
+a local Android notification (`eufama_client/notifications.py`, via
+`plyer.notification`). Encrypted message previews show "🔒 Mesaj criptat"
+rather than the decrypted text, matching most messengers' lock-screen
+behavior. See Roadmap for what this does and doesn't cover.
+
+### Admin live map
+
+VIP/admin accounts get a "📍 Hartă live" button (on the Broadcast tab) that
+opens a browser page plotting every worker's last known GPS position —
+OpenStreetMap tiles via Leaflet, no API key needed. It polls the existing
+`/dispatch/shifts` read-model, now gated behind a short-lived map token
+(`POST /admin/map-token`) instead of being open to anyone who finds the
+URL, since it leaks live GPS positions. SOS workers show as a pulsing red
+marker.
 
 ## Running the backend
 
@@ -147,6 +199,9 @@ downloads them on first run).
 | Buzz (Yahoo-style nudge) | `POST /buzz` → `/ws/app` event → vibration + shake + sound |
 | VIP broadcast to everyone | `POST /broadcast`, VIP/admin-only |
 | Audio/video calls | `POST /conversations/{id}/calls` → browser page at `/static/call.html`, signaled over `/ws/call/{id}` |
+| E2E encrypted text (direct, group, broadcast) | `eufama_client/crypto.py` (PyNaCl); server stores/relays ciphertext only |
+| Local notifications while backgrounded | `eufama_client/notifications.py`, driven by `App.on_pause`/`on_resume` |
+| Admin live map (GPS of every worker) | `POST /admin/map-token` → browser page at `/static/map.html`, polls `/dispatch/shifts` |
 | Shift tracking, GPS ping, panic, incident report | `/shift/*`, `/ping`, `/sos`, `/resolve`, `/incident` (unchanged client contract from the original app) |
 
 ## Roadmap / known limitations
@@ -165,10 +220,35 @@ downloads them on first run).
   with the project's existing dependency-light style. For a larger
   deployment, moving to bcrypt/argon2 (via `passlib`) is a small,
   contained change in `backend/app/auth.py`.
-- **End-to-end encryption.** Messages are encrypted in transit (once
-  deployed behind HTTPS/WSS — see below) but not end-to-end encrypted at
-  rest the way WhatsApp's Signal protocol is. Out of scope for this pass;
-  flagging so it's a conscious decision, not an oversight.
+- **E2E encryption covers text only.** Photos, files and voice notes are
+  uploaded and stored unencrypted. Encrypting them means the client
+  encrypting the file bytes with the same per-message/per-conversation key
+  before upload and decrypting after download — a real change to
+  `media_helpers.py`, `chat_detail.py`'s upload/render paths, and the
+  `/media` static serving (which currently just serves plain files).
+- **No key verification UI.** There's no "scan to verify" / safety-number
+  screen, so the trust model is trust-on-first-use (see above) rather than
+  verified end-to-end security. Worth adding before relying on this
+  against a genuinely adversarial network operator.
+- **Private keys live in the same app-private config file as the login
+  token** (`eufama_client/config.py`), not an OS keystore. Consistent with
+  this project's existing token-storage posture, called out again here
+  since it's now protecting message content too.
+- **Local notifications only, not Firebase Cloud Messaging.** They fire
+  while the EUFAMA Connect process is still alive in the background —
+  typically true right after the user switches apps or the screen turns
+  off. They will **not** wake the app from a fully killed or doze-
+  suspended state; that needs real push (FCM), which requires a Firebase
+  project only the account holder (not this assistant) can create. Once
+  you have one, the integration point is `eufama_client/notifications.py`
+  plus a `services =` entry in `buildozer.spec` for a background p4a
+  service.
+- **No in-app "other chat" banner.** Local notifications are suppressed
+  whenever the app is in the foreground (`EufamaConnectApp.in_foreground`),
+  including for messages in a *different* conversation than the one
+  currently open — there's no lightweight in-app toast for that case yet,
+  so such messages are only visible once you open that chat or the Chats
+  tab refreshes.
 - **Deploy behind HTTPS/WSS.** `getUserMedia` (mic/camera access) is only
   allowed by browsers on secure origins. Put the backend behind a
   reverse proxy (nginx/Caddy) with TLS before relying on calls outside a

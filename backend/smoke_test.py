@@ -5,6 +5,7 @@ one WebSocket round trip before committing. Run with the venv active:
     python smoke_test.py
 """
 
+import json
 import os
 import tempfile
 
@@ -112,8 +113,18 @@ r = client.post("/ping", json={"worker_id": "w1", "token": w1_token, "lat": 38.5
 check("gps ping", r.status_code == 200)
 r = client.post("/sos", json={"worker_id": "w1", "token": w1_token, "lat": 38.5, "lon": -8.8})
 check("sos trigger", r.status_code == 200)
+
 r = client.get("/dispatch/shifts")
-check("dispatch view shows sos", r.json()["w1"]["sos"] is True)
+check("dispatch requires a token (query param missing)", r.status_code == 422)
+r = client.get("/dispatch/shifts?token=garbage")
+check("dispatch rejects invalid token", r.status_code == 401)
+r = client.post("/admin/map-token", headers=H1)
+check("worker cannot mint a map token", r.status_code == 403)
+r = client.post("/admin/map-token", headers=HB)
+check("VIP can mint a map token", r.status_code == 200 and "map_url" in r.json())
+map_token = r.json()["token"]
+r = client.get(f"/dispatch/shifts?token={map_token}")
+check("dispatch view (with valid admin token) shows sos", r.status_code == 200 and r.json()["w1"]["sos"] is True)
 
 # 11. websocket round trip: w2 gets pushed the message w1 sends live
 with client.websocket_connect(f"/ws/app?worker_id=w2&token={w2_token}") as ws2:
@@ -121,5 +132,46 @@ with client.websocket_connect(f"/ws/app?worker_id=w2&token={w2_token}") as ws2:
     check("send while w2 connected", r.status_code == 200)
     event = ws2.receive_json()
     check("w2 received live push", event["type"] == "message" and event["message"]["body"] == "live push test")
+
+# 12. end-to-end encryption plumbing (server never decrypts — just stores/relays opaque blobs)
+r = client.post("/auth/login", json={"worker_id": "w1", "token": w1_token, "public_key": "fake-base64-pubkey-w1"})
+check("login uploads public key", r.status_code == 200 and r.json()["user"]["public_key"] == "fake-base64-pubkey-w1")
+r = client.get("/users", headers=H2)
+check("contacts expose public_key", any(u["public_key"] == "fake-base64-pubkey-w1" for u in r.json()))
+
+r = client.post(
+    f"/conversations/{convo_id}/messages",
+    data={"type": "text", "body": "ZmFrZS1jaXBoZXJ0ZXh0", "encrypted": "true", "enc_scheme": "direct"},
+    headers=H1,
+)
+check("send direct-encrypted message", r.status_code == 200 and r.json()["encrypted"] is True)
+
+r = client.post(
+    f"/conversations/{group_id}/messages",
+    data={
+        "type": "text", "body": "ZmFrZS1ncm91cC1jaXBoZXJ0ZXh0", "encrypted": "true", "enc_scheme": "group",
+        "enc_keys": json.dumps({str(w2_id): "sealed-for-w2", str(boss_id): "sealed-for-boss"}),
+    },
+    headers=H1,
+)
+check("send group-encrypted message", r.status_code == 200 and r.json()["enc_keys"][str(w2_id)] == "sealed-for-w2")
+
+r = client.post(
+    f"/conversations/{convo_id}/messages",
+    data={"type": "text", "encrypted": "true", "enc_scheme": "group"},  # missing enc_keys
+    headers=H1,
+)
+check("group-encrypted message without enc_keys is rejected", r.status_code == 400)
+
+r = client.post(
+    "/broadcast",
+    json={"encrypted": True, "recipients": [
+        {"user_id": w1_id, "body": "cipher-for-w1"},
+        {"user_id": w2_id, "body": "cipher-for-w2"},
+    ]},
+    headers=HB,
+)
+check("encrypted broadcast fans out per-recipient ciphertexts", r.status_code == 200 and len(r.json()) == 2
+      and {m["sender_id"] for m in r.json()} == {boss_id})
 
 print("\nAll smoke checks passed.")
