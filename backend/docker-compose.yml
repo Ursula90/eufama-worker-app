@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - eufama-data:/data
+    environment:
+      # CHANGE these before a real deployment — defaults are fine for a
+      # local demo on a trusted network only.
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-demo-admin-key}
+      - SECRET_KEY=${SECRET_KEY:-demo-secret-key-change-me}
+      # Must be the IP/hostname your phone can actually reach this
+      # machine at (e.g. your laptop's LAN IP) — NOT localhost/127.0.0.1,
+      # since the APK and the backend run on different devices.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:8765}
+    restart: unless-stopped
+
+volumes:
+  eufama-data:
